@@ -2,7 +2,7 @@ import depthai as dai
 import cv2
 import numpy as np
 import time
-
+import math
 
 class SectorDepthClassifier():
 
