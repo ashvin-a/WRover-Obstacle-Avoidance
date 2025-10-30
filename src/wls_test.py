@@ -145,6 +145,41 @@ class SectorDepthClassifier():
                     gap_to_move_to = (start, end)
         return gap_to_move_to
 
+    
+    def compute_bearing(p1, p2):
+        """
+        Computes the angle between two gps coordinates in degrees
+
+        Args:
+            p1 - first gps coordinate
+            p2 - second gps coordinate
+        Returns:
+            angle with respect to north that points into the direction
+        """
+        lat1, lon1 = p1
+        lat2, lon2 = p2
+        
+        # Convert degrees to radians
+        lat1_rad = math.radians(lat1)
+        lon1_rad = math.radians(lon1)
+        lat2_rad = math.radians(lat2)
+        lon2_rad = math.radians(lon2)
+
+        # Calculate differences in coordinates
+        dlon = lon2_rad - lon1_rad
+
+        # Calculate bearing using atan2
+        x = math.sin(dlon) * math.cos(lat2_rad)
+        y = math.cos(lat1_rad) * math.sin(lat2_rad) - math.sin(lat1_rad) * math.cos(lat2_rad) * math.cos(dlon)
+
+        bearing_rad = math.atan2(x, y)
+
+        # Convert bearing from radians to degrees (0° to 360°)
+        bearing_deg = math.degrees(bearing_rad)
+        bearing_deg = (bearing_deg + 360) % 360  # Normalize to 0-360
+
+        return bearing_deg
+
 with dai.Pipeline() as pipeline:
     monoLeft = pipeline.create(dai.node.Camera).build(dai.CameraBoardSocket.CAM_B)
     monoRight = pipeline.create(dai.node.Camera).build(dai.CameraBoardSocket.CAM_C)
