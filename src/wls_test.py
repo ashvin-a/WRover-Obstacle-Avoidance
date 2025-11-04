@@ -64,8 +64,8 @@ class SectorDepthClassifier():
             thetas.append(theta)
             gap_distance = np.sqrt(d1**2 + d2**2 - (2*d1*d2*np.cos(theta)))
             distance_monitor_list.append(gap_distance)
-        print(list(min_list))
-        print("angles====================\n", (np.array(thetas)*180)/3.14)
+        #print(list(min_list))
+        print("angles====================\n", (np.array(thetas)*180)/3.14) # These are the angles of each gap.
         print("list of gaps =====================\n",gaps)        
         print("list of distance between gaps =================================\n", distance_monitor_list, "\n\n\n")
         
@@ -106,10 +106,21 @@ class SectorDepthClassifier():
                 gap_to_move_to = (start, end)
             
         """
-
+        # compass_angle: angle from North to heading in the clockwise direction
+        # compute_bearing: angle from North to target in the clockwise direction
+        # target_angle = (360 - (compass_angle - self.compute_bearing(rover_gps , target_gps))) % 360
+        # if target_angle > 180:
+        #     target_angle = target_angle - 360
         target_angle = 40
+        # replaced the function find_theta()
+        for start, end in valid_gaps:
+                median = (end - start)//2
+                theta = np.arctan((median - self.X_PIXEL_OFFSET)/self.FOCAL_LENGTH)
+                
+                best_theta = np.arctan(((gap_to_move_to[1] - gap_to_move_to[0])/2 - self.X_PIXEL_OFFSET)/self.FOCAL_LENGTH)
 
-        gap_to_move_to = self.find_theta(valid_gaps=valid_gaps, target_angle=target_angle)
+                if abs(target_angle - theta) < abs(target_angle - best_theta):
+                    gap_to_move_to = (start, end)
             
 
         depth_full = cv2.normalize(depth_full, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
@@ -134,18 +145,8 @@ class SectorDepthClassifier():
         end_time = time.time() - start_time
         print(end_time)
 
-    def find_theta(self, valid_gaps, target_angle):
-        for start, end in valid_gaps:
-                median = (end - start)//2
-                theta = np.arctan((median - self.X_PIXEL_OFFSET)/self.FOCAL_LENGTH)
-                
-                best_theta = np.arctan(((gap_to_move_to[1] - gap_to_move_to[0])/2 - self.X_PIXEL_OFFSET)/self.FOCAL_LENGTH)
-
-                if abs(target_angle - theta) < abs(target_angle - best_theta):
-                    gap_to_move_to = (start, end)
-        return gap_to_move_to
-
     
+
     def compute_bearing(p1, p2):
         """
         Computes the angle between two gps coordinates in degrees
