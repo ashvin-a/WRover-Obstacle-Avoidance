@@ -1,5 +1,6 @@
-import depthai
+import depthai as dai
 import cv2
+import numpy as np
 
 with dai.Pipeline() as pipeline:
     monoLeft = pipeline.create(dai.node.Camera).build(dai.CameraBoardSocket.CAM_B)
@@ -23,9 +24,8 @@ with dai.Pipeline() as pipeline:
 
     # Threshold Filter to remove invalid '0' pixels and set an operational range
     # config.postProcessing.thresholdFilter.minRange = 300  # 30cm
-    config.postProcessing.thresholdFilter.maxRange = 6500 # 8.0m
-
-    #config.setConfidenceThreshold(170)
+    config.postProcessing.thresholdFilter.maxRange = 8000 # 8.0m
+    config.setConfidenceThreshold(95)
 
 
 
@@ -45,7 +45,8 @@ with dai.Pipeline() as pipeline:
         assert stereoFrame.validateTransformations()
         # depth = processDepthFrame(stereoFrame.getCvFrame())
         depth = stereoFrame.getCvFrame().astype(np.float32) / 1000.0
-        cv2.imshow("aaa",depth)
+        depth_full = cv2.normalize(depth, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+        cv2.imshow("aaa",depth_full)
         cv2.waitKey(1)
 
     pipeline.stop()

@@ -10,7 +10,7 @@ class SectorDepthClassifier():
     Y_PIXEL_OFFSET = np.float32(360)
     FOCAL_LENGTH = np.float32(563.33333)
     GAP_THRESHOLD = np.float32(1) # The minimum distance between two obstacles such that the rover can fit.
-    DEPTH_THRESH = np.float32(2.7)
+    DEPTH_THRESH = np.float32(2)
 
     def cb(self, depth_full):
         start_time = time.time()
@@ -19,14 +19,17 @@ class SectorDepthClassifier():
         mask = (depth_full == 0) | (depth_full == np.nan)
         depth_full[mask] = np.float32(10)
         H,W = depth_full.shape        
-
         
         rows = (np.arange(depth_full.shape[0], dtype=np.float32) - self.Y_PIXEL_OFFSET) / self.FOCAL_LENGTH
         ground_mask = depth_full * rows[:, None] > 0.5
         depth_full[ground_mask] = np.float32(10)
 
         # list of all min values of each vertical sector. values are in m
-        min_list = np.min(depth_full, axis = 0)
+        min_list = np.percentile(depth_full, 8, axis=0)
+        
+        # newmask = (depth_full == np.nan)
+        # depth_full[newmask] = np.float32(10)
+
         # list of where objects are
         gap_list = (min_list <= self.DEPTH_THRESH).astype(int)
 
@@ -64,7 +67,9 @@ class SectorDepthClassifier():
             thetas.append(theta)
             gap_distance = np.sqrt(d1**2 + d2**2 - (2*d1*d2*np.cos(theta)))
             distance_monitor_list.append(gap_distance)
-        #print(list(min_list))
+        
+        formatted_list = [round(float(x), 2) for x in min_list]
+        print(formatted_list)
         print("angles====================\n", (np.array(thetas)*180)/3.14) # These are the angles of each gap.
         print("list of gaps =====================\n",gaps)        
         print("list of distance between gaps =================================\n", distance_monitor_list, "\n\n\n")
@@ -111,7 +116,7 @@ class SectorDepthClassifier():
         # target_angle = (360 - (compass_angle - self.compute_bearing(rover_gps , target_gps))) % 360
         # if target_angle > 180:
         #     target_angle = target_angle - 360
-        target_angle = 40
+        target_angle = 0
         # replaced the function find_theta()
         for start, end in valid_gaps:
                 median = (end - start)//2
@@ -203,9 +208,9 @@ with dai.Pipeline() as pipeline:
 
     # Threshold Filter to remove invalid '0' pixels and set an operational range
     # config.postProcessing.thresholdFilter.minRange = 300  # 30cm
-    config.postProcessing.thresholdFilter.maxRange = 6500 # 8.0m
+    config.postProcessing.thresholdFilter.maxRange = 8000 # 8.0m
 
-    #config.setConfidenceThreshold(170)
+    config.setConfidenceThreshold(50)
 
 
 
@@ -217,6 +222,8 @@ with dai.Pipeline() as pipeline:
 
     rightOut = monoRightOut.createOutputQueue()
     stereoOut = stereo.depth.createOutputQueue()
+    
+    obj = SectorDepthClassifier()
 
     pipeline.start()
     while pipeline.isRunning():
@@ -225,7 +232,6 @@ with dai.Pipeline() as pipeline:
         assert stereoFrame.validateTransformations()
         # depth = processDepthFrame(stereoFrame.getCvFrame())
         depth = stereoFrame.getCvFrame().astype(np.float32) / 1000.0
-        obj = SectorDepthClassifier()
         obj.cb(depth)
         
     pipeline.stop()
