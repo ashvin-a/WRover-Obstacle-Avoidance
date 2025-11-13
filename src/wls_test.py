@@ -3,6 +3,7 @@ import cv2
 import numpy as np
 import time
 import math
+from trial_ground_detection import detect_ground_points
 
 class SectorDepthClassifier():
 
@@ -143,6 +144,9 @@ class SectorDepthClassifier():
         start_point, end_point = (gap_to_move_to[0], 0), (gap_to_move_to[1], 719)
         color = (0, 255, 255)
         depth_full = cv2.rectangle(depth_full, start_point, end_point, color, -1)
+
+        # Appends ground points into the feed
+        depth_full = detect_ground_points(frame_with_depth_values=depth_full)
 
         cv2.imshow("obstacle avoidance", depth_full)
         cv2.waitKey(1)
