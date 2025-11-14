@@ -3,7 +3,7 @@ import cv2
 import numpy as np
 import time
 import math
-from trial_ground_detection import detect_ground_points
+from trial_ground_detection import detect_ground_points, draw_line_segments
 
 class SectorDepthClassifier():
 
@@ -128,6 +128,8 @@ class SectorDepthClassifier():
                 if abs(target_angle - theta) < abs(target_angle - best_theta):
                     gap_to_move_to = (start, end)
             
+        # Appends ground points into the feed
+        ground_points = detect_ground_points(frame_with_depth_values=depth_full)
 
         depth_full = cv2.normalize(depth_full, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
         depth_full = cv2.cvtColor(depth_full, cv2.COLOR_GRAY2BGR)
@@ -145,8 +147,8 @@ class SectorDepthClassifier():
         color = (0, 255, 255)
         depth_full = cv2.rectangle(depth_full, start_point, end_point, color, -1)
 
-        # Appends ground points into the feed
-        depth_full = detect_ground_points(frame_with_depth_values=depth_full)
+        # Apply the line for ground
+        depth_full = draw_line_segments(image=depth_full, segments=ground_points)
 
         cv2.imshow("obstacle avoidance", depth_full)
         cv2.waitKey(1)
