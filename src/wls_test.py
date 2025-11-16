@@ -12,7 +12,7 @@ class SectorDepthClassifier():
     GAP_THRESHOLD = np.float32(1) # The minimum distance between two obstacles such that the rover can fit.
     DEPTH_THRESH = np.float32(2)
 
-    def cb(self, depth_full):
+    def cb(self, depth_full, compass_angle):
         start_time = time.time()
         # Decode and crop depth image
       
@@ -20,8 +20,9 @@ class SectorDepthClassifier():
         depth_full[mask] = np.float32(10)
         H,W = depth_full.shape        
         
-        rows = (np.arange(depth_full.shape[0], dtype=np.float32) - self.Y_PIXEL_OFFSET) / self.FOCAL_LENGTH
-        ground_mask = depth_full * rows[:, None] > 0.5
+        rows = (self.Y_PIXEL_OFFSET - np.arange(depth_full.shape[0], dtype=np.float32)) / self.FOCAL_LENGTH
+        # maybe constant optimize? ^^^
+        ground_mask = depth_full * rows[:, None] < -0.5
         depth_full[ground_mask] = np.float32(10)
 
         # list of all min values of each vertical sector. values are in m
@@ -116,16 +117,38 @@ class SectorDepthClassifier():
         # target_angle = (360 - (compass_angle - self.compute_bearing(rover_gps , target_gps))) % 360
         # if target_angle > 180:
         #     target_angle = target_angle - 360
-        target_angle = 0
+        rover_gps = (34.0, -118.0)
+        target_gps = (34.1, -117.9) # Example: Target is North-East
+
+        # compute_bearing: angle from North to target in the clockwise direction
+        bearing_to_target = self.compute_bearing(rover_gps , target_gps)
+        
+        # Calculate the relative angle the rover needs to turn to
+        target_angle_deg = (360 - (compass_angle - bearing_to_target)) % 360
+        if target_angle_deg > 180:
+            target_angle_deg = target_angle_deg - 360
+
+        target_angle = math.radians(target_angle_deg)
         # replaced the function find_theta()
+        # CHANGED:  the logic for finding the best gap
+        
+        # Initialize 'best_theta' based on the *first* valid gap
+        try:
+            start_init, end_init = gap_to_move_to
+            median_init = start_init + (end_init - start_init) // 2
+            best_theta = np.arctan((median_init - self.X_PIXEL_OFFSET) / self.FOCAL_LENGTH)
+        except (ValueError, IndexError): # Catches (0,0) if no valid gaps
+            best_theta = 0.0 # Default to 0 (straight ahead)
+
+        # Now, loop through all gaps and find the one closest to our target_angle
         for start, end in valid_gaps:
-                median = (end - start)//2
+                median = start + (end - start) // 2 
                 theta = np.arctan((median - self.X_PIXEL_OFFSET)/self.FOCAL_LENGTH)
                 
-                best_theta = np.arctan(((gap_to_move_to[1] - gap_to_move_to[0])/2 - self.X_PIXEL_OFFSET)/self.FOCAL_LENGTH)
-
+                # Check if this gap's angle (theta) is closer to our target_angle
                 if abs(target_angle - theta) < abs(target_angle - best_theta):
                     gap_to_move_to = (start, end)
+                    best_theta = theta # Update the 'best' angle
             
 
         depth_full = cv2.normalize(depth_full, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
@@ -151,7 +174,7 @@ class SectorDepthClassifier():
         print(end_time)
 
     
-
+    @staticmethod
     def compute_bearing(p1, p2):
         """
         Computes the angle between two gps coordinates in degrees
@@ -195,10 +218,12 @@ with dai.Pipeline() as pipeline:
     stereo.setDepthAlign(dai.CameraBoardSocket.CAM_A)
     stereo.setOutputSize(1280, 720)
     
+    imu = pipeline.create(dai.node.IMU)
+    imu.enableIMUSensor(dai.IMUSensor.ROTATION_VECTOR, 100)
     config = stereo.initialConfig
 
     # Median filter to remove the salt n pepper type pixels
-
+    config.postProcessing.median = dai.MedianFilter.KERNEL_5x5
 
     # Temporal Filter for flicker reduction
     # config.postProcessing.temporalFilter.enable = True
