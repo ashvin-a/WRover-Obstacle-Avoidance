@@ -1,7 +1,7 @@
 import depthai as dai
 import cv2
 import numpy as np
-import time
+# import time
 import math
 
 import rclpy
@@ -49,7 +49,7 @@ class SectorDepthClassifier():
 
     ## CHANGED: Added 'compass_angle' as an argument
     def cb(self, depth_full, compass_angle, rover_gps):
-        start_time = time.time()
+        # start_time = time.time()
         # Decode and crop depth image
       
         mask = (depth_full == 0) | (depth_full == np.nan)
@@ -61,7 +61,7 @@ class SectorDepthClassifier():
 
         # Perform the crop using NumPy slicing:
         # [All Rows, Start Column : End Column]
-        depth_full = depth_full[:, start_col:end_col]
+        #depth_full = depth_full[:, start_col:end_col]
         
 
         rows = (self.Y_PIXEL_OFFSET - np.arange(depth_full.shape[0], dtype=np.float32)) / self.FOCAL_LENGTH
@@ -106,11 +106,12 @@ class SectorDepthClassifier():
             d1 = min_list[ux1]/np.cos(theta1)
             d2 = min_list[ux2]/np.cos(theta2)
             
+            d = min(d2,d1)
             # Calculating the theta for each gap
             
             theta = theta2 - theta1
             thetas.append(theta)
-            gap_distance = np.sqrt(d1**2 + d2**2 - (2*d1*d2*np.cos(theta)))
+            gap_distance = np.sqrt(d**2 + d**2 - (2*d*d*np.cos(theta)))
             distance_monitor_list.append(gap_distance)
         
         formatted_list = [round(float(x), 2) for x in min_list]
@@ -120,17 +121,27 @@ class SectorDepthClassifier():
         print("list of distance between gaps =================================\n", distance_monitor_list, "\n\n\n")
         
         valid_gaps = []
+        checked = []
         for i,d in enumerate(distance_monitor_list):
-            if d >= self.GAP_THRESHOLD and (gaps[i][1] - gaps[i][0]) >= 90:
+            if d >= self.GAP_THRESHOLD + 0.5:
+                oldStart = gaps[i][0]
+                oldEnd = gaps[i][1]
+                z = min( min_list[oldStart], min_list[oldEnd] )
+                xStart = (z * (oldStart - self.X_PIXEL_OFFSET)/self.FOCAL_LENGTH)
+                newStart = ((xStart + 0.6) * self.FOCAL_LENGTH / z) + self.X_PIXEL_OFFSET
+                xEnd = (z * (oldEnd - self.X_PIXEL_OFFSET)/self.FOCAL_LENGTH)
+                newEnd = ((xEnd - 0.6) * self.FOCAL_LENGTH / z) + self.X_PIXEL_OFFSET
+                
+                if newStart > newEnd:
+                    valid_gaps.append(gaps[i])
+
+                valid_gaps.append((round(newStart), round(newEnd)))
+                checked.append(True)
+            elif d >= self.GAP_THRESHOLD:
                 valid_gaps.append(gaps[i])
-                                                                                                                                                                                            
-        # Check for the angles
-        try:
-            gap_to_move_to = valid_gaps[0]
-        except IndexError:
-            print("no valid gaps u have crashed!!!!!! :)")
-            return [0.0, 0.0, 0.0, 0.0]
-            gap_to_move_to = (0,0)
+                checked.append(False)
+
+
 
         """
         ... (Your commented-out math block) ...
@@ -157,15 +168,16 @@ class SectorDepthClassifier():
         print("target angle = ", -1 * target_angle_deg)
         # Convert target angle from degrees to radians for comparison with arctan result
         target_angle = -1 * math.radians(target_angle_deg) # flip signs
-        
+                                                                                                                                                                                                          
+        # Check for the angles
+        try:
+            gap_to_move_to = valid_gaps[0]
+        except IndexError:
+            print("no valid gaps u have crashed!!!!!! :)")
+            return [0.0, 0.0, 0.0, 0.0]
+            gap_to_move_to = (0,0)
         # Optional: Uncomment to debug your angles
         # print(f"Heading: {compass_angle:.1f} | Bearing: {bearing_to_target:.1f} | Target Angle: {target_angle_deg:.1f}")
-        
-        ## --- END: IMU Target Angle Implementation ---
-
-
-        ## --- START: Best Gap Logic Correction ---
-        ## CHANGED: Fixed the logic for finding the best gap
         
         # Initialize 'best_theta' based on the *first* valid gap
         try:
@@ -176,15 +188,24 @@ class SectorDepthClassifier():
             best_theta = 0.0 # Default to 0 (straight ahead)
 
         # Now, loop through all gaps and find the one closest to our target_angle
-        for start, end in valid_gaps:
-                median = start + (end - start) // 2 
-                theta = np.arctan((median - self.X_PIXEL_OFFSET)/self.FOCAL_LENGTH)
-                
-                # Check if this gap's angle (theta) is closer to our target_angle
-                if abs(target_angle - theta) < abs(target_angle - best_theta):
-                    gap_to_move_to = (start, end)
-                    best_theta = theta # Update the 'best' angle
-        ## --- END: Best Gap Logic Correction ---
+        for (start, end), isChecked in zip(valid_gaps, checked):
+                if not isChecked:
+                    median = start + (end - start) // 2 
+                    theta = np.arctan((median - self.X_PIXEL_OFFSET)/self.FOCAL_LENGTH)
+
+                    if abs(target_angle - theta) < abs(target_angle - best_theta):
+                        gap_to_move_to = (start, end)
+                        best_theta = theta # Update the 'best' angle
+                else:
+                    for i in range(start, end + 1):
+                        theta = np.arctan((i - self.X_PIXEL_OFFSET)/self.FOCAL_LENGTH)
+
+                        if abs(target_angle - theta) < abs(target_angle - best_theta):
+                            gap_to_move_to = (start, end)
+                            best_theta = theta # Update the 'best' angle
+
+            
+
             
 
         depth_full = cv2.normalize(depth_full, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
@@ -206,9 +227,9 @@ class SectorDepthClassifier():
         cv2.imshow("obstacle avoidance", depth_full)
         cv2.waitKey(1)
         
-        end_time = time.time() - start_time
+        # end_time = time.time() - start_time
 
-        if abs(best_theta) < 2:             # almost straight within 2 degrees of straight
+        if abs(best_theta) < math.radians(2.0):             # almost straight within 2 degrees of straight
             y = 1.0
             x = 0.0
         else :                  # gap is right or left
@@ -347,8 +368,8 @@ with dai.Pipeline() as pipeline:
 
         swerve_node.send(swerve_cmd)
 
-        if cv2.waitKey(1) == ord('q'):
-            break
+        # if cv2.waitKey(1) == ord('q'):
+        #     break
         
 
     pipeline.stop()
