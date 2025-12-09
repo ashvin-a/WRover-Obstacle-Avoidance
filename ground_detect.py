@@ -53,7 +53,7 @@ def ransac_plane(pts, iters=500, dist_thresh=0.05,
         return False, None, None, None
 
     up_vector = np.array([0, 1, 0])     # world up direction
-    cos_thresh = np.cos(np.deg2rad(angle_thresh_deg))
+    cos_thresh = angle_thresh_deg #orginally np.cos(np.deg2rad(angle_thresh_deg))
     rng = np.random.default_rng()
 
     best_inliers = -1
