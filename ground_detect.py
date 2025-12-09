@@ -99,7 +99,10 @@ def ransac_plane(pts, iters=500, dist_thresh=0.05,
             best_inliers = count
             n_best = n.copy()
             d_best = float(d)
-            mask_best = mask.copy() #convert back to pixels
+            mask_best = mask.copy() 
+            #convert back to pixels back  X = (uu - cx) * (Z / fx)           
+            # intrinsics  Y = (vv - cy) * (Z / fy)
+            # equivalent mask to what we would have in the 2D depth image. 
 
     if n_best is None:
         return False, None, None, None
