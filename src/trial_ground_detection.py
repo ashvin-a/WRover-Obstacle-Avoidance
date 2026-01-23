@@ -4,7 +4,7 @@ from typing import List
 
 def detect_ground_points(frame_with_depth_values) -> List[List]:
 
-    floor_threshold_depth = 0.1# To be figured out experimentally
+    floor_threshold_depth = 0.01# To be figured out experimentally
     depth = frame_with_depth_values.astype(np.float32)
 
     # If depth is RGB, convert to 1-channel depth magnitude
