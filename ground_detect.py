@@ -1,11 +1,11 @@
 import numpy as np
 # converting from camera intrinsics data to cloud point
 def backproject_depth(depth, fx, fy, cx, cy, step=8):
-    """
-    # depth: wxh array of depths 
+   """
+    # depth: wxh array of depths
     # fx, fy, cx, cy: camera intrinsics
-   #  returns array of xyz points
-
+    #  returns array of xyz points
+    """
     H, W = depth.shape
     vs = np.arange(0, H, step)
     us = np.arange(0, W, step)
@@ -16,8 +16,13 @@ def backproject_depth(depth, fx, fy, cx, cy, step=8):
     X = (uu - cx) * (Z / fx)           # intrinsics 
     Y = (vv - cy) * (Z / fy)
 
+     /* 
+         u_flat = uu.reshape(-1)
+         v_flat = uu.reshape(-1)
+     */
     pts = np.stack([X, Y, Z], axis=-1).reshape(-1, 3)
     return pts
+    # pts, u_flat, v_flat (aarav should chech this part 
 
 
 # using 3 random points to create a plane
@@ -35,7 +40,33 @@ def plane_from_points(p, q, r):
     n = n / norm
     d = -np.dot(n, p)
     return n, d
+#https://numpy.org/doc/stable/user/basics.indexing.html
+# this directly implies image[row,col] = image[v,u]
+# justifies pixel_mask[v_flat[mask],u_flat[mask]] = True
 
+def inliers_to_pixels(mask_inliers, v_flat, u_flat, image_shape)
+    H,W = image_shape #if depth.shape == (400, 600) H = 400 rows, 600 columns
+    # empty pixel mask
+    pixel_mask = np.zeros((H,W), dtype=bool))
+    pixel_mask[v_flat[mask_inliers],u_flat[mask_inliers]] = True
+    return pixel_mask
+
+
+"""
+Concrete mini-example
+Sampled 5 pixels and made 5 points:
+u_flat = [10, 20, 30, 40, 50]
+v_flat = [ 5,  5,  6,  7,  7]
+
+mask_inliers = [False, True, False, True, True]
+Then:
+u_in = [20, 40, 50]
+v_in = [ 5,  7,  7]
+So you mark:
+(v=5, u=20) True
+(v=7, u=40) True
+(v=7, u=50) True
+"""
 
 # 3D plane fitting with ransac (random numbers as of now)
 def ransac_plane(pts, iters=500, dist_thresh=0.05,
