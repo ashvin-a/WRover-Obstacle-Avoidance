@@ -40,14 +40,15 @@ def plane_from_points(p, q, r):
     n = n / norm
     d = -np.dot(n, p)
     return n, d
+   
 #https://numpy.org/doc/stable/user/basics.indexing.html
 # this directly implies image[row,col] = image[v,u]
 # justifies pixel_mask[v_flat[mask],u_flat[mask]] = True
 
-def inliers_to_pixels(mask_inliers, v_flat, u_flat, image_shape)
+def inliers_to_pixels(mask_inliers, v_flat, u_flat, image_shape):
     H,W = image_shape #if depth.shape == (400, 600) H = 400 rows, 600 columns
     # empty pixel mask
-    pixel_mask = np.zeros((H,W), dtype=bool))
+    pixel_mask = np.zeros((H,W), dtype=bool)
     pixel_mask[v_flat[mask_inliers],u_flat[mask_inliers]] = True
     return pixel_mask
 
@@ -84,7 +85,7 @@ def ransac_plane(pts, iters=500, dist_thresh=0.05,
         return False, None, None, None
 
     up_vector = np.array([0, 1, 0])     # world up direction
-    cos_thresh = angle_thresh_deg #orginally np.cos(np.deg2rad(angle_thresh_deg)), or np.arccos
+    cos_thresh = np.cos(np.deg2rad(angle_thresh_deg)) #orginally , angle_thresh_degor np.arccos
     rng = np.random.default_rng()
 
     best_inliers = -1
@@ -139,3 +140,4 @@ def ransac_plane(pts, iters=500, dist_thresh=0.05,
         return False, None, None, None
 
     return True, n_best, d_best, mask_best
+
