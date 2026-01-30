@@ -1,7 +1,7 @@
 import numpy as np
 # converting from camera intrinsics data to cloud point
 def backproject_depth(depth, fx, fy, cx, cy, step=8):
-   """
+    """
     # depth: wxh array of depths
     # fx, fy, cx, cy: camera intrinsics
     #  returns array of xyz points
@@ -16,10 +16,10 @@ def backproject_depth(depth, fx, fy, cx, cy, step=8):
     X = (uu - cx) * (Z / fx)           # intrinsics 
     Y = (vv - cy) * (Z / fy)
 
-     /* 
+     """
          u_flat = uu.reshape(-1)
          v_flat = uu.reshape(-1)
-     */
+     """
     pts = np.stack([X, Y, Z], axis=-1).reshape(-1, 3)
     return pts
     # pts, u_flat, v_flat (aarav should chech this part 
