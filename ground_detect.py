@@ -1,7 +1,10 @@
 import numpy as np
+import depthai as dai
+import cv2
+
 # converting from camera intrinsics data to cloud point
-def backproject_depth(depth, fx, fy, cx, cy, step=8):
-   """
+def backproject_depth(depth, step=1):
+    """
     # depth: wxh array of depths
     # fx, fy, cx, cy: camera intrinsics
     #  returns array of xyz points
@@ -13,13 +16,13 @@ def backproject_depth(depth, fx, fy, cx, cy, step=8):
     uu, vv = np.meshgrid(us, vs)
 
     Z = depth[vv, uu]                  # depth values
-    X = (uu - cx) * (Z / fx)           # intrinsics 
-    Y = (vv - cy) * (Z / fy)
+    X = (uu - 605) * (Z / 563.33333)           # intrinsics 
+    Y = (vv - 360) * (Z / 563.33333)
 
-     /* 
+    """
          u_flat = uu.reshape(-1)
          v_flat = uu.reshape(-1)
-     */
+    """
     pts = np.stack([X, Y, Z], axis=-1).reshape(-1, 3)
     return pts
     # pts, u_flat, v_flat (aarav should chech this part 
@@ -110,10 +113,12 @@ def ransac_plane(pts, iters=500, dist_thresh=0.05,
 
         n = n / norm
 
+        if np.dot(n, up_vector) < 0:
+            n = -n  # Flip the normal so it faces "up"
         # enforce "up" orientation
         if np.dot(n, up_vector) < cos_thresh:
             continue
-
+        
         d = -np.dot(n, p1)
 
         # height constraint
@@ -139,7 +144,21 @@ def ransac_plane(pts, iters=500, dist_thresh=0.05,
     if n_best is None:
         return False, None, None, None
 
+
     return True, n_best, d_best, mask_best
+
+def main(depth_full):
+    pts = backproject_depth(depth_full)
+    mask = ransac_plane(pts= pts)
+    ground_mask = np.array(mask[3])
+    ground_mask = ground_mask.reshape(-1, 1280)
+
+    depth_full = cv2.normalize(depth_full, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+    depth_full = cv2.cvtColor(depth_full, cv2.COLOR_GRAY2BGR)
+
+    depth_full[ground_mask] = (255, 0, 0)
+    cv2.imshow("obstacle avoidance", depth_full)
+    cv2.waitKey(1)
 
 with dai.Pipeline() as pipeline:
     monoLeft = pipeline.create(dai.node.Camera).build(dai.CameraBoardSocket.CAM_B)
@@ -158,8 +177,6 @@ with dai.Pipeline() as pipeline:
 
     config.setConfidenceThreshold(30)
 
-
-
     monoLeftOut = monoLeft.requestOutput((1280, 720))
     monoRightOut = monoRight.requestOutput((1280, 720))
 
@@ -175,23 +192,10 @@ with dai.Pipeline() as pipeline:
     imu.setMaxBatchReports(10)
     imuQueue = imu.out.createOutputQueue(maxSize=10, blocking=False)
 
-    obj = SectorDepthClassifier()
-
-    rclpy.init()
-    gps_node = GPSNode()
-    swerve_node = SwervePublisher()
 
     pipeline.start()
     while pipeline.isRunning():
-        rclpy.spin_once(gps_node, timeout_sec=0.0)
-        rclpy.spin_once(swerve_node, timeout_sec=0.0)
-        imuData = imuQueue.tryGet() # Non-blocking get
-        current_heading = 0.0
-        if imuData:
-            imuPacket = imuData.packets[-1]
-            rv = imuPacket.rotationVector
-            current_heading = quaternion_to_yaw(rv.i, rv.j, rv.k, rv.real)
-            print("current heeading = ", current_heading)
+
         ## --- Depth Data Processing ---
         stereoFrame = stereoOut.get()
 
@@ -202,9 +206,8 @@ with dai.Pipeline() as pipeline:
         
         
         # Call the processing function, now passing the heading
-        swerve_cmd = obj.cb(depth, current_heading, gps_node.latest_gps)
+        main(depth_full= depth)
 
-        swerve_node.send(swerve_cmd)
 
         # if cv2.waitKey(1) == ord('q'):
         #     break
