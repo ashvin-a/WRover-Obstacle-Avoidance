@@ -19,10 +19,12 @@ def backproject_depth(depth, step=1):
     X = (uu - 605) * (Z / 563.33333)           # intrinsics 
     Y = (vv - 360) * (Z / 563.33333)
 
+
     """
          u_flat = uu.reshape(-1)
          v_flat = uu.reshape(-1)
     """
+
     pts = np.stack([X, Y, Z], axis=-1).reshape(-1, 3)
     return pts
     # pts, u_flat, v_flat (aarav should chech this part 
