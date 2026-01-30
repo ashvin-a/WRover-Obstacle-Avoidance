@@ -141,3 +141,78 @@ def ransac_plane(pts, iters=500, dist_thresh=0.05,
 
     return True, n_best, d_best, mask_best
 
+with dai.Pipeline() as pipeline:
+    monoLeft = pipeline.create(dai.node.Camera).build(dai.CameraBoardSocket.CAM_B)
+    monoRight = pipeline.create(dai.node.Camera).build(dai.CameraBoardSocket.CAM_C)
+    stereo = pipeline.create(dai.node.StereoDepth)
+
+    stereo.setDefaultProfilePreset(dai.node.StereoDepth.PresetMode.ROBOTICS)
+    stereo.setDepthAlign(dai.CameraBoardSocket.CAM_A)
+    stereo.setOutputSize(1280, 720)
+
+    config = stereo.initialConfig
+
+    # Median filter to remove the salt n pepper type pixels
+    config.postProcessing.median = dai.MedianFilter.KERNEL_5x5
+    config.postProcessing.thresholdFilter.maxRange = 8000 # 8.0m
+
+    config.setConfidenceThreshold(30)
+
+
+
+    monoLeftOut = monoLeft.requestOutput((1280, 720))
+    monoRightOut = monoRight.requestOutput((1280, 720))
+
+    monoLeftOut.link(stereo.left)
+    monoRightOut.link(stereo.right)
+
+    rightOut = monoRightOut.createOutputQueue()
+    stereoOut = stereo.depth.createOutputQueue()
+    
+    imu = pipeline.create(dai.node.IMU)
+    imu.enableIMUSensor(dai.IMUSensor.ROTATION_VECTOR, 100) # 100 Hz
+    imu.setBatchReportThreshold(1)
+    imu.setMaxBatchReports(10)
+    imuQueue = imu.out.createOutputQueue(maxSize=10, blocking=False)
+
+    obj = SectorDepthClassifier()
+
+    rclpy.init()
+    gps_node = GPSNode()
+    swerve_node = SwervePublisher()
+
+    pipeline.start()
+    while pipeline.isRunning():
+        rclpy.spin_once(gps_node, timeout_sec=0.0)
+        rclpy.spin_once(swerve_node, timeout_sec=0.0)
+        imuData = imuQueue.tryGet() # Non-blocking get
+        current_heading = 0.0
+        if imuData:
+            imuPacket = imuData.packets[-1]
+            rv = imuPacket.rotationVector
+            current_heading = quaternion_to_yaw(rv.i, rv.j, rv.k, rv.real)
+            print("current heeading = ", current_heading)
+        ## --- Depth Data Processing ---
+        stereoFrame = stereoOut.get()
+
+        assert stereoFrame.validateTransformations()
+        
+        # Get frame and convert to meters
+        depth = stereoFrame.getCvFrame().astype(np.float32) / 1000.0
+        
+        
+        # Call the processing function, now passing the heading
+        swerve_cmd = obj.cb(depth, current_heading, gps_node.latest_gps)
+
+        swerve_node.send(swerve_cmd)
+
+        # if cv2.waitKey(1) == ord('q'):
+        #     break
+        
+
+    pipeline.stop()
+
+
+cv2.destroyAllWindows()
+## --- END: Pipeline and Device Loop ---
+
