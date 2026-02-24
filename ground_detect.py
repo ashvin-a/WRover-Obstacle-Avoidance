@@ -187,13 +187,6 @@ with dai.Pipeline() as pipeline:
 
     rightOut = monoRightOut.createOutputQueue()
     stereoOut = stereo.depth.createOutputQueue()
-    
-    imu = pipeline.create(dai.node.IMU)
-    imu.enableIMUSensor(dai.IMUSensor.ROTATION_VECTOR, 100) # 100 Hz
-    imu.setBatchReportThreshold(1)
-    imu.setMaxBatchReports(10)
-    imuQueue = imu.out.createOutputQueue(maxSize=10, blocking=False)
-
 
     pipeline.start()
     while pipeline.isRunning():

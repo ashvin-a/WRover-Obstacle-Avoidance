@@ -309,7 +309,7 @@ with dai.Pipeline() as pipeline:
     stereo = pipeline.create(dai.node.StereoDepth)
 
     stereo.setDefaultProfilePreset(dai.node.StereoDepth.PresetMode.ROBOTICS)
-    stereo.setDepthAlign(dai.CameraBoardSocket.CAM_A)
+    stereo.setDepthAlign(dai.CameraBoardSocket.CAM_B)
     stereo.setOutputSize(1280, 720)
 
     config = stereo.initialConfig
