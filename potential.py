@@ -482,7 +482,21 @@ def ransac_plane(pts, iters=500, dist_thresh=0.05,
 
     return True, n_best, d_best, mask_best
 
+'''
+Before display:
 
+depth image
+-------------------------
+gray gray gray gray gray
+gray gray gray gray gray
+gray gray gray gray gray
+
+After applying ground_mask:
+
+gray gray BLUE BLUE BLUE
+gray gray BLUE BLUE BLUE
+gray gray gray  gray gray
+'''
 def main(depth_full):
     pts = backproject_depth(depth_full)
     mask = ransac_plane(pts=pts)
