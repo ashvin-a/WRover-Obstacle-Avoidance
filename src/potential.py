@@ -509,24 +509,57 @@ def main(depth_full):
     depth_vis = cv2.cvtColor(depth_vis, cv2.COLOR_GRAY2BGR)
 
     if success:
+        # Get all valid points in the FULL image (step=1)
         pts_full, u_full, v_full = backproject_depth(depth_full, step=1)
         
+        # Calculate distances of all full-resolution points to the winning plane
         dist_full = np.abs(pts_full @ n_best + d_best)
-        full_mask = dist_full < 0.08 
+        full_mask = dist_full < 0.15 
         
+        # Reconstruct the 2D image mask 
         ground_mask_2d = inliers_to_pixels(full_mask, v_full, u_full, depth_full.shape)
-        depth_vis[ground_mask_2d] = (255, 0, 0)
 
-        # --- DEBUG PRINT STATEMENTS ---
-        # Calculate how tilted the detected plane is relative to the camera lens
-        up_vector = np.array([0, 1, 0])
-        angle_deg = np.degrees(np.arccos(np.clip(np.dot(n_best, up_vector), -1.0, 1.0)))
+        # ==========================================================
+        # --- THE CONTINUITY CHECK (The "Solid Floor" Test) ---
+        # ==========================================================
         
-        # d_best is roughly the distance from the camera to the floor in meters
-        print(f"✅ Floor Found | Inliers: {np.sum(full_mask):05d} | Tilt: {angle_deg:04.1f}° | Cam Height (d): {d_best:04.2f}m")
+        # A) Convert boolean mask to OpenCV format (uint8: 0 or 255)
+        mask_8u = (ground_mask_2d * 255).astype(np.uint8)
+
+        # B) (Optional but recommended) Morphological Close
+        # This acts like a "bridge". If the stereo camera has a tiny 5-pixel 
+        # blind spot on the floor, this bridges the gap so the floor isn't split in two.
+        kernel = np.ones((9, 9), np.uint8)
+        mask_8u = cv2.morphologyEx(mask_8u, cv2.MORPH_CLOSE, kernel)
+
+        # C) Find all continuous blobs (contours)
+        contours, _ = cv2.findContours(mask_8u, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        if contours:
+            # D) Find the largest continuous blob
+            largest_contour = max(contours, key=cv2.contourArea)
+            largest_area = cv2.contourArea(largest_contour)
+
+            # E) Check if this blob is big enough to be a safe, continuous floor
+            # (50,000 pixels is roughly 5% of a 1280x720 screen)
+            if largest_area > 50000:
+                # Create a blank mask and draw ONLY the largest blob
+                continuous_floor_mask = np.zeros_like(mask_8u)
+                cv2.drawContours(continuous_floor_mask, [largest_contour], -1, 255, thickness=cv2.FILLED)
+
+                # Apply blue color ONLY to the perfectly continuous floor
+                depth_vis[continuous_floor_mask == 255] = (255, 0, 0)
+                
+                print(f"✅ Solid Floor! Total Inliers: {np.sum(full_mask)} | Continuous Area: {largest_area}")
+            else:
+                cv2.putText(depth_vis, "Plane found, but NOT continuous", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 165, 255), 2)
+                print(f"⚠️ Rejected: Found a plane, but the largest continuous piece was only {largest_area} pixels.")
+        else:
+            print("❌ RANSAC found a plane, but it had no valid contours.")
+
     else:
+        # If RANSAC didn't find a plane at all
         cv2.putText(depth_vis, "No Ground Found", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-        print(f"❌ RANSAC Failed. Valid sample points: {len(pts_sub)}")
 
     cv2.imshow("obstacle avoidance", depth_vis)
     cv2.waitKey(1)
