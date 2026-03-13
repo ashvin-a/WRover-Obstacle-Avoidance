@@ -72,31 +72,32 @@ If depth increases → point moves farther forward
 # converting from camera intrinsics data to cloud point
 #Takes a 2D depth image and turns it into a 3D point cloud.
 def backproject_depth(depth, step=1):
-    """
-    # depth: wxh array of depths
-    # fx, fy, cx, cy: camera intrinsics
-    #  returns array of xyz points
-    """
     H, W = depth.shape
     vs = np.arange(0, H, step)
     us = np.arange(0, W, step)
 
-## So ground plane might look like: Y = aZ + b
-
     uu, vv = np.meshgrid(us, vs)
 
-    Z = depth[vv, uu]  # depth values
-    X = (uu - 605) * (Z / 563.33333)  # intrinsics
+    Z = depth[vv, uu]
+    X = (uu - 605) * (Z / 563.33333)
     Y = (vv - 360) * (Z / 563.33333)
 
-    """
-         u_flat = uu.reshape(-1)
-         v_flat = uu.reshape(-1)
-    """
+    # --- ADVANCED FILTERING ---
+    # 1. Z > 0.1 : Ignore completely invalid points
+    # 2. Z < 4.0 : Ignore anything further than 4 meters away (stops wall snapping)
+    # 3. vv > H // 3 : Ignore the top 33% of the image (stops ceiling/high wall snapping)
+    valid = (Z > 0.1) & (Z < 3.5) & (vv > H // 3)
 
-    pts = np.stack([X, Y, Z], axis=-1).reshape(-1, 3)
-    return pts
-    # pts, u_flat, v_flat (aarav should chech this part
+    Z = Z[valid]
+    X = X[valid]
+    Y = Y[valid]
+    
+    u_flat = uu[valid]  
+    v_flat = vv[valid]  
+
+    pts = np.stack([X, Y, Z], axis=-1)
+    
+    return pts, u_flat, v_flat
 
 
 # using 3 random points to create a plane
@@ -220,8 +221,8 @@ So you mark:
 
 
 # 3D plane fitting with ransac (random numbers as of now)
-def ransac_plane(pts, iters=500, dist_thresh=0.05,
-                 angle_thresh_deg=30, target=None, tol=1.0, min_inliers=50):
+def ransac_plane(pts, iters=500, dist_thresh=0.15,
+                 angle_thresh_deg=40, target=None, tol=1.0, min_inliers=400):
     # pts: Nx3 array of 3D points
     # iters: number of trials
     # dist_thresh: max distance for an inlier
@@ -484,16 +485,50 @@ def ransac_plane(pts, iters=500, dist_thresh=0.05,
 
 
 def main(depth_full):
-    pts = backproject_depth(depth_full)
-    mask = ransac_plane(pts=pts)
-    ground_mask = np.array(mask[3])
-    ground_mask = ground_mask.reshape(-1, 1280)
+    # 1. Backproject (Downsample with step=10)
+    pts_sub, u_sub, v_sub = backproject_depth(depth_full, step=10)
+    
+    # Check if we even have enough points to run RANSAC
+    if len(pts_sub) < 100:
+        print("❌ Not enough valid depth points to find a floor.")
+        cv2.imshow("obstacle avoidance", depth_full)
+        cv2.waitKey(1)
+        return
 
-    depth_full = cv2.normalize(depth_full, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
-    depth_full = cv2.cvtColor(depth_full, cv2.COLOR_GRAY2BGR)
+    # 2. RUN RANSAC
+    success, n_best, d_best, mask_best = ransac_plane(
+        pts=pts_sub, 
+        iters=400,              # Slightly more iterations for stability
+        dist_thresh=0.08,       # Tightened to 8cm (stops merging floor with low obstacles)
+        angle_thresh_deg=40,    # Tightened to 40 degrees (rejects vertical walls!)
+        min_inliers=450         # Lowered slightly since we cropped the image
+    )
 
-    depth_full[ground_mask] = (255, 0, 0)
-    cv2.imshow("obstacle avoidance", depth_full)
+    # Setup visualizer
+    depth_vis = cv2.normalize(depth_full, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+    depth_vis = cv2.cvtColor(depth_vis, cv2.COLOR_GRAY2BGR)
+
+    if success:
+        pts_full, u_full, v_full = backproject_depth(depth_full, step=1)
+        
+        dist_full = np.abs(pts_full @ n_best + d_best)
+        full_mask = dist_full < 0.08 
+        
+        ground_mask_2d = inliers_to_pixels(full_mask, v_full, u_full, depth_full.shape)
+        depth_vis[ground_mask_2d] = (255, 0, 0)
+
+        # --- DEBUG PRINT STATEMENTS ---
+        # Calculate how tilted the detected plane is relative to the camera lens
+        up_vector = np.array([0, 1, 0])
+        angle_deg = np.degrees(np.arccos(np.clip(np.dot(n_best, up_vector), -1.0, 1.0)))
+        
+        # d_best is roughly the distance from the camera to the floor in meters
+        print(f"✅ Floor Found | Inliers: {np.sum(full_mask):05d} | Tilt: {angle_deg:04.1f}° | Cam Height (d): {d_best:04.2f}m")
+    else:
+        cv2.putText(depth_vis, "No Ground Found", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+        print(f"❌ RANSAC Failed. Valid sample points: {len(pts_sub)}")
+
+    cv2.imshow("obstacle avoidance", depth_vis)
     cv2.waitKey(1)
 
 
@@ -509,7 +544,7 @@ with dai.Pipeline() as pipeline:
     config = stereo.initialConfig
 
     # Median filter to remove the salt n pepper type pixels
-    config.postProcessing.median = dai.MedianFilter.KERNEL_5x5
+    config.postProcessing.median = dai.MedianFilter.KERNEL_7x7
     config.postProcessing.thresholdFilter.maxRange = 8000  # 8.0m
 
     config.setConfidenceThreshold(30)
